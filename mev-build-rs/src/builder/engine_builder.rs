@@ -2,9 +2,10 @@ use crate::{
     blinded_block_provider::Error as BlindedBlockProviderError,
     builder::Error,
     types::{BidRequest as PayloadRequest, ExecutionPayloadWithValue},
+    ExecutionPayload,
 };
 use ethereum_consensus::{
-    bellatrix::mainnet::ExecutionPayload,
+    bellatrix::mainnet::ExecutionPayload as ExecutionPayloadBellatrix,
     builder::SignedValidatorRegistration,
     crypto::SecretKey,
     primitives::{BlsPublicKey, U256},
@@ -59,10 +60,11 @@ impl EngineBuilder {
 
     pub async fn run(&mut self) {}
 
-    pub fn get_payload_with_value(
+    pub fn get_payload_with_value<T: ExecutionPayload + Default>(
         &self,
         request: &PayloadRequest,
-    ) -> Result<ExecutionPayloadWithValue, Error> {
+        consensus_version_opt: Option<&str>,
+    ) -> Result<ExecutionPayloadWithValue<T>, Error> {
         let (fee_recipient, gas_limit) = self
             .state
             .lock()
@@ -73,12 +75,21 @@ impl EngineBuilder {
             })
             .ok_or_else(|| Error::MissingPreferences(request.public_key.clone()))?;
 
-        let payload = ExecutionPayload {
-            parent_hash: request.parent_hash.clone(),
-            fee_recipient,
-            gas_limit,
-            extra_data: ByteList::try_from(b"hello world".as_ref()).unwrap(),
-            ..Default::default()
+        // TODO: version
+        let payload = match consensus_version_opt {
+            Some("bellatrix") => ExecutionPayloadBellatrix {
+                parent_hash: request.parent_hash.clone(),
+                fee_recipient,
+                gas_limit,
+                extra_data: ByteList::try_from(b"hello world".as_ref()).unwrap(),
+                ..Default::default()
+            },
+            Some(_) => {
+                panic!("unsupported version")
+            }
+            None => {
+                panic!("missing consensus version header")
+            }
         };
 
         let bid = ExecutionPayloadWithValue { payload, value: U256::from_bytes_le([1u8; 32]) };

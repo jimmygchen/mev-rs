@@ -15,8 +15,9 @@ use futures::StreamExt;
 use mev_build_rs::{
     sign_builder_message, verify_signed_builder_message, verify_signed_consensus_message,
     BidRequest, BlindedBlockProvider, BlindedBlockProviderError, BuilderBid, BuilderError,
-    EngineBuilder, ExecutionPayload, ExecutionPayloadHeader, ExecutionPayloadWithValue,
-    SignedBlindedBeaconBlock, SignedBuilderBid, SignedValidatorRegistration,
+    EngineBuilder, ExecutionPayload, ExecutionPayloadHeader, ExecutionPayloadHeaderBellatrix,
+    ExecutionPayloadWithValue, SignedBlindedBeaconBlock, SignedBuilderBid,
+    SignedValidatorRegistration,
 };
 use parking_lot::Mutex;
 use std::{cmp::Ordering, collections::HashMap, ops::Deref, sync::Arc};
@@ -120,7 +121,7 @@ fn validate_registration(
     let registration_status = if let Some(latest_timestamp) = latest_timestamp {
         let status = determine_validator_registration_status(message.timestamp, latest_timestamp);
         if matches!(status, ValidatorRegistrationStatus::Outdated) {
-            return Err(Error::InvalidTimestamp)
+            return Err(Error::InvalidTimestamp);
         }
         status
     } else {
@@ -158,7 +159,7 @@ fn validate_execution_payload(
     // TODO allow for "adjustment cap" per the protocol rules
     // towards the proposer's preference
     if execution_payload.gas_limit != preferences.gas_limit {
-        return Err(Error::InvalidGasLimit)
+        return Err(Error::InvalidGasLimit);
     }
 
     // verify payload is valid
@@ -176,7 +177,7 @@ fn validate_signed_block(
 ) -> Result<(), Error> {
     let header = ExecutionPayloadHeader::try_from(payload)?;
     if signed_block.message.body.execution_payload_header != header {
-        return Err(Error::UnknownBlock)
+        return Err(Error::UnknownBlock);
     }
 
     let message = &mut signed_block.message;
@@ -225,7 +226,7 @@ impl RelayInner {
 #[derive(Debug, Default)]
 struct State {
     validator_preferences: HashMap<BlsPublicKey, SignedValidatorRegistration>,
-    execution_payloads: HashMap<BidRequest, ExecutionPayload>,
+    execution_payloads: HashMap<BidRequest, dyn ExecutionPayload>,
 }
 
 impl Relay {
@@ -306,14 +307,15 @@ impl BlindedBlockProvider for Relay {
         Ok(())
     }
 
-    async fn fetch_best_bid(
+    async fn fetch_best_bid<P: ExecutionPayload, B: SignedBuilderBid<P>>(
         &self,
         bid_request: &BidRequest,
-    ) -> Result<SignedBuilderBid, BlindedBlockProviderError> {
+        consensus_version: Option<&str>,
+    ) -> Result<B, BlindedBlockProviderError> {
         validate_bid_request(bid_request)?;
 
         let ExecutionPayloadWithValue { mut payload, value } =
-            self.builder.get_payload_with_value(bid_request)?;
+            self.builder.get_payload_with_value(bid_request, consensus_version)?;
 
         let header = {
             let mut state = self.state.lock();
@@ -325,7 +327,15 @@ impl BlindedBlockProvider for Relay {
 
             validate_execution_payload(&payload, &value, &preferences.message)?;
 
-            let header = ExecutionPayloadHeader::try_from(&mut payload)?;
+            let header = match consensus_version_opt {
+                Some("bellatrix") => ExecutionPayloadHeaderBellatrix::try_from(&mut payload)?,
+                Some(_) => {
+                    panic!("unsupported version")
+                }
+                None => {
+                    panic!("missing consensus version header")
+                }
+            };
 
             state.execution_payloads.insert(bid_request.clone(), payload);
             header

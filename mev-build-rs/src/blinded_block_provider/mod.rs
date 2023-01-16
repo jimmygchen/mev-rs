@@ -47,10 +47,14 @@ pub trait BlindedBlockProvider {
         registrations: &mut [SignedValidatorRegistration],
     ) -> Result<(), Error>;
 
-    async fn fetch_best_bid(&self, bid_request: &BidRequest) -> Result<SignedBuilderBid, Error>;
-
-    async fn open_bid(
+    async fn fetch_best_bid<P: ExecutionPayload, B: SignedBuilderBid<P>>(
         &self,
-        signed_block: &mut SignedBlindedBeaconBlock,
-    ) -> Result<ExecutionPayload, Error>;
+        bid_request: &BidRequest,
+        consensus_version: Option<&str>,
+    ) -> Result<B, Error>;
+
+    async fn open_bid<P: ExecutionPayload, B: SignedBlindedBeaconBlock>(
+        &self,
+        signed_block: &mut B,
+    ) -> Result<P, Error>;
 }

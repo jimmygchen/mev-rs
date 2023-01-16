@@ -5,6 +5,7 @@ use crate::{
         BidRequest, ExecutionPayload, SignedBlindedBeaconBlock, SignedBuilderBid,
         SignedValidatorRegistration,
     },
+    SignedBuilderBidBellatrix,
 };
 use axum::http::StatusCode;
 use beacon_api_client::{
@@ -38,10 +39,10 @@ impl Client {
         api_error_or_ok(response).await.map_err(From::from)
     }
 
-    pub async fn fetch_best_bid(
+    pub async fn fetch_best_bid<P: ExecutionPayload, B: SignedBuilderBid<P>>(
         &self,
         bid_request: &BidRequest,
-    ) -> Result<SignedBuilderBid, Error> {
+    ) -> Result<B, Error> {
         let target = format!(
             "/eth/v1/builder/header/{}/{}/{}",
             bid_request.slot, bid_request.parent_hash, bid_request.public_key
@@ -49,10 +50,10 @@ impl Client {
         let response = self.api.http_get(&target).await?;
 
         if response.status() == StatusCode::NO_CONTENT {
-            return Err(BuilderError::NoHeaderPrepared(Box::new(bid_request.clone())).into())
+            return Err(BuilderError::NoHeaderPrepared(Box::new(bid_request.clone())).into());
         }
 
-        let result: ApiResult<Value<SignedBuilderBid>> =
+        let result: ApiResult<Value<SignedBuilderBidBellatrix>> =
             response.json().await.map_err(beacon_api_client::Error::Http)?;
         match result {
             ApiResult::Ok(result) => Ok(result.data),
@@ -60,13 +61,13 @@ impl Client {
         }
     }
 
-    pub async fn open_bid(
+    pub async fn open_bid<B: SignedBlindedBeaconBlock, P: ExecutionPayload>(
         &self,
-        signed_block: &SignedBlindedBeaconBlock,
-    ) -> Result<ExecutionPayload, Error> {
+        signed_block: B,
+    ) -> Result<P, Error> {
         let response = self.api.http_post("/eth/v1/builder/blinded_blocks", signed_block).await?;
 
-        let response: Value<ExecutionPayload> =
+        let response: Value<P> =
             response.json().await.map_err(|err| -> Error { BeaconApiError::Http(err).into() })?;
         Ok(response.data)
     }

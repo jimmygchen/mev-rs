@@ -42,7 +42,10 @@ impl From<Error> for BlindedBlockProviderError {
     }
 }
 
-fn validate_bid(bid: &mut SignedBuilderBid, context: &Context) -> Result<(), Error> {
+fn validate_bid<B: SignedBuilderBid<P>, P: ExecutionPayload>(
+    bid: &mut B,
+    context: &Context,
+) -> Result<(), Error> {
     let message = &mut bid.message;
     let public_key = message.public_key.clone();
     verify_signed_builder_message(message, &bid.signature, &public_key, context)?;
@@ -139,10 +142,11 @@ impl BlindedBlockProvider for RelayMux {
         }
     }
 
-    async fn fetch_best_bid(
+    async fn fetch_best_bid<B: SignedBuilderBid<P>, P: ExecutionPayload>(
         &self,
         bid_request: &BidRequest,
-    ) -> Result<SignedBuilderBid, BlindedBlockProviderError> {
+        _consensus_version: Option(&str),
+    ) -> Result<B, BlindedBlockProviderError> {
         let responses = stream::iter(self.relays.iter().cloned())
             .map(|relay| async move { relay.fetch_best_bid(bid_request).await })
             .buffer_unordered(self.relays.len())
@@ -173,7 +177,7 @@ impl BlindedBlockProvider for RelayMux {
         let best_indices = select_best_bids(bids.iter().map(|(bid, i)| (&bid.message.value, *i)));
 
         if best_indices.is_empty() {
-            return Err(Error::NoBids.into())
+            return Err(Error::NoBids.into());
         }
 
         // for now, break any ties by picking the first bid,
@@ -199,10 +203,10 @@ impl BlindedBlockProvider for RelayMux {
         Ok(bids[*best_index].0.clone())
     }
 
-    async fn open_bid(
+    async fn open_bid<B: SignedBlindedBeaconBlock, P: ExecutionPayload>(
         &self,
-        signed_block: &mut SignedBlindedBeaconBlock,
-    ) -> Result<ExecutionPayload, BlindedBlockProviderError> {
+        signed_block: &mut B,
+    ) -> Result<P, BlindedBlockProviderError> {
         let relay_indices = {
             let mut state = self.state.lock();
             let key = bid_key_from(signed_block, &state.latest_pubkey);
@@ -222,7 +226,7 @@ impl BlindedBlockProvider for RelayMux {
             match response {
                 Ok(payload) => {
                     if &payload.block_hash == expected_block_hash {
-                        return Ok(payload)
+                        return Ok(payload);
                     } else {
                         tracing::warn!("error opening bid from relay {i}: the returned payload did not match the expected block hash: {expected_block_hash}");
                     }
