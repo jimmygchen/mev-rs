@@ -77,22 +77,19 @@ impl EngineBuilder {
 
         // TODO: version
         let payload = match consensus_version_opt {
-            Some("bellatrix") => ExecutionPayloadBellatrix {
+            Some("bellatrix") => Some(ExecutionPayloadBellatrix {
                 parent_hash: request.parent_hash.clone(),
                 fee_recipient,
                 gas_limit,
                 extra_data: ByteList::try_from(b"hello world".as_ref()).unwrap(),
                 ..Default::default()
-            },
-            Some(_) => {
-                panic!("unsupported version")
-            }
-            None => {
-                panic!("missing consensus version header")
-            }
+            }),
+            Some(_) => None,
+            None => None,
         };
 
-        let bid = ExecutionPayloadWithValue { payload, value: U256::from_bytes_le([1u8; 32]) };
+        let bid =
+            ExecutionPayloadWithValue { payload: payload?, value: U256::from_bytes_le([1u8; 32]) };
         Ok(bid)
     }
 

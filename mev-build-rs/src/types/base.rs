@@ -3,14 +3,15 @@ use ethereum_consensus::primitives::{BlsPublicKey, Hash32, Slot};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use ssz_rs::prelude::SimpleSerialize;
+use ssz_rs::Sized;
 use ssz_rs::U256;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 pub trait BuilderBid<T: ExecutionPayload> {}
 
 pub trait SignedBuilderBid<T: ExecutionPayload> {}
 
-pub trait ExecutionPayload: DeserializeOwned + Default {}
+pub trait ExecutionPayload: DeserializeOwned + Default + Serialize + DeserializeOwned {}
 
 pub trait SignedBlindedBeaconBlock: Serialize {}
 
@@ -26,6 +27,7 @@ pub struct BidRequest {
 #[derive(Debug, Default, SimpleSerialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExecutionPayloadWithValue<T: ExecutionPayload> {
+    #[serde(with = "crate::serde::as_string")]
     pub payload: T,
     pub value: U256,
 }

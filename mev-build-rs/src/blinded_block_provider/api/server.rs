@@ -4,7 +4,7 @@ use crate::{
         BidRequest, ExecutionPayload, SignedBlindedBeaconBlock, SignedBuilderBid,
         SignedValidatorRegistration,
     },
-    ExecutionPayloadBellatrix, SignedBuilderBidBellatrix,
+    ExecutionPayloadBellatrix, SignedBlindedBeaconBlockBellatrix, SignedBuilderBidBellatrix,
 };
 use axum::http::HeaderMap;
 use axum::{
@@ -84,7 +84,13 @@ async fn handle_open_bid<B: BlindedBlockProvider>(
 
     let consensus_version = headers.get(CONSENSUS_VERSION_HEADER).map(|val| val.to_str()?);
     let open_bid_result = match consensus_version? {
-        "bellatrix" => builder.open_bid(&mut block).await?,
+        "bellatrix" => {
+            builder
+                .open_bid::<ExecutionPayloadBellatrix, SignedBlindedBeaconBlockBellatrix>(
+                    &mut (block as SignedBlindedBeaconBlockBellatrix),
+                )
+                .await?
+        }
         "capella" => Err("fork not supported"),
         _ => Err(format!("Missing {} header", CONSENSUS_VERSION_HEADER)),
     };
